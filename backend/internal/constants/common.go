@@ -9,6 +9,7 @@ const (
 
 // Adjustment action names.
 const (
-	ActionSwap = "swap"
-	ActionMove = "move"
+	ActionSwap   = "swap"
+	ActionMove   = "move"
+	ActionRevert = "revert"
 )

@@ -149,6 +149,26 @@ func (h *ScheduleHandler) Move(c *gin.Context) {
 	OK(c, result)
 }
 
+// Revert godoc
+// @Summary Undo a move or swap adjustment
+// @Tags schedules
+// @Produce json
+// @Param id path int true "adjustment log id"
+// @Success 200 {object} dto.Response
+// @Router /api/v1/schedules/adjustments/{id}/revert [post]
+func (h *ScheduleHandler) Revert(c *gin.Context) {
+	id, ok := parseID(c, "id")
+	if !ok {
+		return
+	}
+	result, err := h.service.RevertAdjustment(c.Request.Context(), id)
+	if err != nil {
+		Error(c, err)
+		return
+	}
+	OK(c, result)
+}
+
 // Adjustments godoc
 // @Summary List adjustment history
 // @Tags schedules

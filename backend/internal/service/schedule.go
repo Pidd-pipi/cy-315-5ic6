@@ -22,6 +22,7 @@ type ScheduleService interface {
 	CheckConflicts(ctx context.Context) ([]dto.ConflictResponse, error)
 	Swap(ctx context.Context, req *dto.SwapScheduleRequest) (*dto.AdjustmentResponse, error)
 	Move(ctx context.Context, req *dto.MoveScheduleRequest) (*dto.AdjustmentResponse, error)
+	RevertAdjustment(ctx context.Context, logID uint) (*dto.RevertAdjustmentResponse, error)
 	ListAdjustments(ctx context.Context, page, pageSize int) ([]dto.AdjustmentLogResponse, int64, error)
 	ClassroomUtilization(ctx context.Context) ([]dto.ClassroomUtilizationItem, error)
 	TeacherWorkload(ctx context.Context) ([]dto.TeacherWorkloadItem, error)
@@ -36,6 +37,7 @@ type scheduleService struct {
 	courses     repository.CourseRepository
 	timeSlots   repository.TimeSlotRepository
 	adjustments repository.AdjustmentLogRepository
+	uow         repository.UnitOfWork
 	logger      *slog.Logger
 }
 
@@ -48,6 +50,7 @@ func NewScheduleService(
 	courses repository.CourseRepository,
 	timeSlots repository.TimeSlotRepository,
 	adjustments repository.AdjustmentLogRepository,
+	uow repository.UnitOfWork,
 	logger *slog.Logger,
 ) ScheduleService {
 	return &scheduleService{
@@ -58,6 +61,7 @@ func NewScheduleService(
 		courses:     courses,
 		timeSlots:   timeSlots,
 		adjustments: adjustments,
+		uow:         uow,
 		logger:      logger,
 	}
 }
@@ -225,20 +229,40 @@ func (s *scheduleService) Swap(ctx context.Context, req *dto.SwapScheduleRequest
 		}
 		return nil, fmt.Errorf("get schedule b: %w", err)
 	}
+
+	// Capture both sides' full positions (week/day/period/classroom) together
+	// with the lesson numbers occupying them, so the change can be undone.
+	snapshot := adjustmentSnapshot{
+		Sides: []adjustmentSide{
+			{ScheduleID: a.ID, Week: a.Week, DayOfWeek: a.DayOfWeek, TimeSlotID: a.TimeSlotID, ClassroomID: a.ClassroomID},
+			{ScheduleID: b.ID, Week: b.Week, DayOfWeek: b.DayOfWeek, TimeSlotID: b.TimeSlotID, ClassroomID: b.ClassroomID},
+		},
+	}
+
 	a.Week, b.Week = b.Week, a.Week
 	a.DayOfWeek, b.DayOfWeek = b.DayOfWeek, a.DayOfWeek
 	a.TimeSlotID, b.TimeSlotID = b.TimeSlotID, a.TimeSlotID
 	a.ClassroomID, b.ClassroomID = b.ClassroomID, a.ClassroomID
-	if err := s.schedules.Update(ctx, a); err != nil {
-		return nil, fmt.Errorf("update schedule a: %w", err)
-	}
-	if err := s.schedules.Update(ctx, b); err != nil {
-		return nil, fmt.Errorf("update schedule b: %w", err)
-	}
-	logID, err := s.recordAdjustment(ctx, req.ScheduleAID, constants.ActionSwap, map[string]any{"schedule_a_id": req.ScheduleAID, "schedule_b_id": req.ScheduleBID})
+
+	var logID uint
+	err = s.uow.RunInTransaction(ctx, func(schedules repository.ScheduleRepository, adjustments repository.AdjustmentLogRepository) error {
+		if err := schedules.Update(ctx, a); err != nil {
+			return fmt.Errorf("update schedule a: %w", err)
+		}
+		if err := schedules.Update(ctx, b); err != nil {
+			return fmt.Errorf("update schedule b: %w", err)
+		}
+		id, err := s.recordAdjustment(ctx, adjustments, req.ScheduleAID, constants.ActionSwap, snapshot)
+		if err != nil {
+			return err
+		}
+		logID = id
+		return nil
+	})
 	if err != nil {
-		return nil, err
+		return nil, mapWriteError("swap schedules", err)
 	}
+
 	responses, err := s.enrichSchedules(ctx, []model.Schedule{*a})
 	if err != nil {
 		return nil, err
@@ -258,17 +282,41 @@ func (s *scheduleService) Move(ctx context.Context, req *dto.MoveScheduleRequest
 		}
 		return nil, fmt.Errorf("get schedule: %w", err)
 	}
+
+	// The destination may already hold another lesson; record its lesson
+	// number too so both sides of the move are fully captured for undo.
+	destinationHolder, err := s.findHolder(ctx, req.Week, req.DayOfWeek, req.TimeSlotID, req.ClassroomID, req.ScheduleID)
+	if err != nil {
+		return nil, err
+	}
+	snapshot := adjustmentSnapshot{
+		Sides: []adjustmentSide{
+			{ScheduleID: item.ID, Week: item.Week, DayOfWeek: item.DayOfWeek, TimeSlotID: item.TimeSlotID, ClassroomID: item.ClassroomID},
+			{ScheduleID: destinationHolder, Week: req.Week, DayOfWeek: req.DayOfWeek, TimeSlotID: req.TimeSlotID, ClassroomID: req.ClassroomID},
+		},
+	}
+
 	item.Week = req.Week
 	item.DayOfWeek = req.DayOfWeek
 	item.TimeSlotID = req.TimeSlotID
 	item.ClassroomID = req.ClassroomID
-	if err := s.schedules.Update(ctx, item); err != nil {
-		return nil, fmt.Errorf("update schedule: %w", err)
-	}
-	logID, err := s.recordAdjustment(ctx, req.ScheduleID, constants.ActionMove, map[string]any{"week": req.Week, "day_of_week": req.DayOfWeek, "time_slot_id": req.TimeSlotID, "classroom_id": req.ClassroomID})
+
+	var logID uint
+	err = s.uow.RunInTransaction(ctx, func(schedules repository.ScheduleRepository, adjustments repository.AdjustmentLogRepository) error {
+		if err := schedules.Update(ctx, item); err != nil {
+			return fmt.Errorf("update schedule: %w", err)
+		}
+		id, err := s.recordAdjustment(ctx, adjustments, req.ScheduleID, constants.ActionMove, snapshot)
+		if err != nil {
+			return err
+		}
+		logID = id
+		return nil
+	})
 	if err != nil {
-		return nil, err
+		return nil, mapWriteError("move schedule", err)
 	}
+
 	responses, err := s.enrichSchedules(ctx, []model.Schedule{*item})
 	if err != nil {
 		return nil, err
@@ -287,13 +335,19 @@ func (s *scheduleService) ListAdjustments(ctx context.Context, page, pageSize in
 	}
 	out := make([]dto.AdjustmentLogResponse, 0, len(items))
 	for i := range items {
-		out = append(out, dto.AdjustmentLogResponse{
-			ID:         items[i].ID,
-			ScheduleID: items[i].ScheduleID,
-			Action:     items[i].Action,
-			Detail:     items[i].Detail,
-			CreatedAt:  items[i].CreatedAt.Format("2006-01-02 15:04:05"),
-		})
+		entry := dto.AdjustmentLogResponse{
+			ID:          items[i].ID,
+			ScheduleID:  items[i].ScheduleID,
+			Action:      items[i].Action,
+			Detail:      items[i].Detail,
+			Reverted:    items[i].RevertedAt != nil,
+			RevertLogID: derefUint(items[i].RevertLogID),
+			CreatedAt:   items[i].CreatedAt.Format("2006-01-02 15:04:05"),
+		}
+		if items[i].RevertedAt != nil {
+			entry.RevertedAt = items[i].RevertedAt.Format("2006-01-02 15:04:05")
+		}
+		out = append(out, entry)
 	}
 	return out, total, nil
 }
@@ -383,13 +437,13 @@ func (s *scheduleService) CourseDensity(ctx context.Context) ([]dto.CourseDensit
 	return out, nil
 }
 
-func (s *scheduleService) recordAdjustment(ctx context.Context, scheduleID uint, action string, detail any) (uint, error) {
+func (s *scheduleService) recordAdjustment(ctx context.Context, adjustments repository.AdjustmentLogRepository, scheduleID uint, action string, detail any) (uint, error) {
 	data, err := json.Marshal(detail)
 	if err != nil {
 		return 0, fmt.Errorf("marshal adjustment detail: %w", err)
 	}
 	log := &model.AdjustmentLog{ScheduleID: scheduleID, Action: action, Detail: string(data)}
-	if err := s.adjustments.Create(ctx, log); err != nil {
+	if err := adjustments.Create(ctx, log); err != nil {
 		return 0, fmt.Errorf("record adjustment: %w", err)
 	}
 	return log.ID, nil

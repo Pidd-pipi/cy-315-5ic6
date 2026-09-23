@@ -71,13 +71,29 @@ type AdjustmentResponse struct {
 	LogID     uint               `json:"log_id"`
 }
 
+// RevertAdjustmentResponse is the result of undoing a move/swap adjustment.
+type RevertAdjustmentResponse struct {
+	// Schedules holds every timetable entry restored by the undo (one for a
+	// move, two for a swap). Their new positions are queryable immediately.
+	Schedules []ScheduleResponse `json:"schedules"`
+	Conflicts []ConflictResponse `json:"conflicts"`
+	// LogID is the id of the "revert" history entry recorded by this undo.
+	LogID uint `json:"log_id"`
+	// AlreadyReverted is true when the requested change had already been
+	// undone; the timetable and history are left untouched.
+	AlreadyReverted bool `json:"already_reverted"`
+}
+
 // AdjustmentLogResponse is an audit history entry.
 type AdjustmentLogResponse struct {
-	ID         uint   `json:"id"`
-	ScheduleID uint   `json:"schedule_id"`
-	Action     string `json:"action"`
-	Detail     string `json:"detail"`
-	CreatedAt  string `json:"created_at"`
+	ID          uint   `json:"id"`
+	ScheduleID  uint   `json:"schedule_id"`
+	Action      string `json:"action"`
+	Detail      string `json:"detail"`
+	Reverted    bool   `json:"reverted"`
+	RevertedAt  string `json:"reverted_at"`
+	RevertLogID uint   `json:"revert_log_id"`
+	CreatedAt   string `json:"created_at"`
 }
 
 // ExportScheduleRequest is the query payload for timetable export.
