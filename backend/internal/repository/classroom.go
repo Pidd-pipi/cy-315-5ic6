@@ -30,10 +30,10 @@ func NewClassroomRepository(db *gorm.DB) ClassroomRepository {
 func (r *classroomRepository) List(ctx context.Context, page, pageSize int) ([]model.Classroom, int64, error) {
 	var items []model.Classroom
 	var total int64
-	if err := r.db.WithContext(ctx).Model(&model.Classroom{}).Count(&total).Error; err != nil {
+	if err := withTx(ctx, r.db).Model(&model.Classroom{}).Count(&total).Error; err != nil {
 		return nil, 0, fmt.Errorf("count classrooms: %w", err)
 	}
-	if err := paginate(r.db.WithContext(ctx).Model(&model.Classroom{}), page, pageSize).
+	if err := paginate(withTx(ctx, r.db).Model(&model.Classroom{}), page, pageSize).
 		Order("id ASC").Find(&items).Error; err != nil {
 		return nil, 0, fmt.Errorf("list classrooms: %w", err)
 	}
@@ -42,7 +42,7 @@ func (r *classroomRepository) List(ctx context.Context, page, pageSize int) ([]m
 
 func (r *classroomRepository) GetByID(ctx context.Context, id uint) (*model.Classroom, error) {
 	var item model.Classroom
-	if err := r.db.WithContext(ctx).First(&item, id).Error; err != nil {
+	if err := withTx(ctx, r.db).First(&item, id).Error; err != nil {
 		return nil, normalizeError(err)
 	}
 	return &item, nil
@@ -53,14 +53,14 @@ func (r *classroomRepository) GetByIDs(ctx context.Context, ids []uint) ([]model
 	if len(ids) == 0 {
 		return items, nil
 	}
-	if err := r.db.WithContext(ctx).Where("id IN ?", ids).Find(&items).Error; err != nil {
+	if err := withTx(ctx, r.db).Where("id IN ?", ids).Find(&items).Error; err != nil {
 		return nil, fmt.Errorf("get classrooms by ids: %w", err)
 	}
 	return items, nil
 }
 
 func (r *classroomRepository) Create(ctx context.Context, classroom *model.Classroom) error {
-	if err := r.db.WithContext(ctx).Create(classroom).Error; err != nil {
+	if err := withTx(ctx, r.db).Create(classroom).Error; err != nil {
 		if isConstraintError(err) {
 			return ErrConstraint
 		}
@@ -70,7 +70,7 @@ func (r *classroomRepository) Create(ctx context.Context, classroom *model.Class
 }
 
 func (r *classroomRepository) Update(ctx context.Context, classroom *model.Classroom) error {
-	if err := r.db.WithContext(ctx).Save(classroom).Error; err != nil {
+	if err := withTx(ctx, r.db).Save(classroom).Error; err != nil {
 		if isConstraintError(err) {
 			return ErrConstraint
 		}
@@ -80,7 +80,7 @@ func (r *classroomRepository) Update(ctx context.Context, classroom *model.Class
 }
 
 func (r *classroomRepository) Delete(ctx context.Context, id uint) error {
-	if err := r.db.WithContext(ctx).Delete(&model.Classroom{}, id).Error; err != nil {
+	if err := withTx(ctx, r.db).Delete(&model.Classroom{}, id).Error; err != nil {
 		return fmt.Errorf("delete classroom: %w", err)
 	}
 	return nil

@@ -22,6 +22,7 @@ type ScheduleService interface {
 	CheckConflicts(ctx context.Context) ([]dto.ConflictResponse, error)
 	Swap(ctx context.Context, req *dto.SwapScheduleRequest) (*dto.AdjustmentResponse, error)
 	Move(ctx context.Context, req *dto.MoveScheduleRequest) (*dto.AdjustmentResponse, error)
+	UndoAdjustment(ctx context.Context, adjustmentLogID uint) (*dto.UndoAdjustmentResponse, error)
 	ListAdjustments(ctx context.Context, page, pageSize int) ([]dto.AdjustmentLogResponse, int64, error)
 	ClassroomUtilization(ctx context.Context) ([]dto.ClassroomUtilizationItem, error)
 	TeacherWorkload(ctx context.Context) ([]dto.TeacherWorkloadItem, error)
@@ -36,6 +37,7 @@ type scheduleService struct {
 	courses     repository.CourseRepository
 	timeSlots   repository.TimeSlotRepository
 	adjustments repository.AdjustmentLogRepository
+	tx          repository.TransactionManager
 	logger      *slog.Logger
 }
 
@@ -48,6 +50,7 @@ func NewScheduleService(
 	courses repository.CourseRepository,
 	timeSlots repository.TimeSlotRepository,
 	adjustments repository.AdjustmentLogRepository,
+	tx repository.TransactionManager,
 	logger *slog.Logger,
 ) ScheduleService {
 	return &scheduleService{
@@ -58,6 +61,7 @@ func NewScheduleService(
 		courses:     courses,
 		timeSlots:   timeSlots,
 		adjustments: adjustments,
+		tx:          tx,
 		logger:      logger,
 	}
 }
@@ -225,6 +229,9 @@ func (s *scheduleService) Swap(ctx context.Context, req *dto.SwapScheduleRequest
 		}
 		return nil, fmt.Errorf("get schedule b: %w", err)
 	}
+	// Snapshot both sides before the change so an undo can restore them.
+	beforeA := adjustmentPositionFromSchedule(*a)
+	beforeB := adjustmentPositionFromSchedule(*b)
 	a.Week, b.Week = b.Week, a.Week
 	a.DayOfWeek, b.DayOfWeek = b.DayOfWeek, a.DayOfWeek
 	a.TimeSlotID, b.TimeSlotID = b.TimeSlotID, a.TimeSlotID
@@ -235,7 +242,13 @@ func (s *scheduleService) Swap(ctx context.Context, req *dto.SwapScheduleRequest
 	if err := s.schedules.Update(ctx, b); err != nil {
 		return nil, fmt.Errorf("update schedule b: %w", err)
 	}
-	logID, err := s.recordAdjustment(ctx, req.ScheduleAID, constants.ActionSwap, map[string]any{"schedule_a_id": req.ScheduleAID, "schedule_b_id": req.ScheduleBID})
+	detail := &swapAdjustmentDetail{
+		Sides: []adjustmentSide{
+			{ScheduleID: req.ScheduleAID, Before: beforeA, After: adjustmentPositionFromSchedule(*a)},
+			{ScheduleID: req.ScheduleBID, Before: beforeB, After: adjustmentPositionFromSchedule(*b)},
+		},
+	}
+	logID, err := s.recordAdjustment(ctx, req.ScheduleAID, constants.ActionSwap, detail)
 	if err != nil {
 		return nil, err
 	}
@@ -258,6 +271,17 @@ func (s *scheduleService) Move(ctx context.Context, req *dto.MoveScheduleRequest
 		}
 		return nil, fmt.Errorf("get schedule: %w", err)
 	}
+	// Snapshot the original week/day/period/classroom for undo.
+	detail := &moveAdjustmentDetail{
+		ScheduleID: req.ScheduleID,
+		Before:     adjustmentPositionFromSchedule(*item),
+		After: adjustmentPosition{
+			Week:        req.Week,
+			DayOfWeek:   req.DayOfWeek,
+			TimeSlotID:  req.TimeSlotID,
+			ClassroomID: req.ClassroomID,
+		},
+	}
 	item.Week = req.Week
 	item.DayOfWeek = req.DayOfWeek
 	item.TimeSlotID = req.TimeSlotID
@@ -265,7 +289,7 @@ func (s *scheduleService) Move(ctx context.Context, req *dto.MoveScheduleRequest
 	if err := s.schedules.Update(ctx, item); err != nil {
 		return nil, fmt.Errorf("update schedule: %w", err)
 	}
-	logID, err := s.recordAdjustment(ctx, req.ScheduleID, constants.ActionMove, map[string]any{"week": req.Week, "day_of_week": req.DayOfWeek, "time_slot_id": req.TimeSlotID, "classroom_id": req.ClassroomID})
+	logID, err := s.recordAdjustment(ctx, req.ScheduleID, constants.ActionMove, detail)
 	if err != nil {
 		return nil, err
 	}
@@ -292,6 +316,7 @@ func (s *scheduleService) ListAdjustments(ctx context.Context, page, pageSize in
 			ScheduleID: items[i].ScheduleID,
 			Action:     items[i].Action,
 			Detail:     items[i].Detail,
+			UndoneBy:   items[i].UndoneBy,
 			CreatedAt:  items[i].CreatedAt.Format("2006-01-02 15:04:05"),
 		})
 	}

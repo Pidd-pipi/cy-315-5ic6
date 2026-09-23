@@ -30,10 +30,10 @@ func NewTeacherRepository(db *gorm.DB) TeacherRepository {
 func (r *teacherRepository) List(ctx context.Context, page, pageSize int) ([]model.Teacher, int64, error) {
 	var items []model.Teacher
 	var total int64
-	if err := r.db.WithContext(ctx).Model(&model.Teacher{}).Count(&total).Error; err != nil {
+	if err := withTx(ctx, r.db).Model(&model.Teacher{}).Count(&total).Error; err != nil {
 		return nil, 0, fmt.Errorf("count teachers: %w", err)
 	}
-	if err := paginate(r.db.WithContext(ctx).Model(&model.Teacher{}), page, pageSize).
+	if err := paginate(withTx(ctx, r.db).Model(&model.Teacher{}), page, pageSize).
 		Order("id ASC").Find(&items).Error; err != nil {
 		return nil, 0, fmt.Errorf("list teachers: %w", err)
 	}
@@ -42,7 +42,7 @@ func (r *teacherRepository) List(ctx context.Context, page, pageSize int) ([]mod
 
 func (r *teacherRepository) GetByID(ctx context.Context, id uint) (*model.Teacher, error) {
 	var item model.Teacher
-	if err := r.db.WithContext(ctx).First(&item, id).Error; err != nil {
+	if err := withTx(ctx, r.db).First(&item, id).Error; err != nil {
 		return nil, normalizeError(err)
 	}
 	return &item, nil
@@ -53,14 +53,14 @@ func (r *teacherRepository) GetByIDs(ctx context.Context, ids []uint) ([]model.T
 	if len(ids) == 0 {
 		return items, nil
 	}
-	if err := r.db.WithContext(ctx).Where("id IN ?", ids).Find(&items).Error; err != nil {
+	if err := withTx(ctx, r.db).Where("id IN ?", ids).Find(&items).Error; err != nil {
 		return nil, fmt.Errorf("get teachers by ids: %w", err)
 	}
 	return items, nil
 }
 
 func (r *teacherRepository) Create(ctx context.Context, teacher *model.Teacher) error {
-	if err := r.db.WithContext(ctx).Create(teacher).Error; err != nil {
+	if err := withTx(ctx, r.db).Create(teacher).Error; err != nil {
 		if isConstraintError(err) {
 			return ErrConstraint
 		}
@@ -70,7 +70,7 @@ func (r *teacherRepository) Create(ctx context.Context, teacher *model.Teacher) 
 }
 
 func (r *teacherRepository) Update(ctx context.Context, teacher *model.Teacher) error {
-	if err := r.db.WithContext(ctx).Save(teacher).Error; err != nil {
+	if err := withTx(ctx, r.db).Save(teacher).Error; err != nil {
 		if isConstraintError(err) {
 			return ErrConstraint
 		}
@@ -80,7 +80,7 @@ func (r *teacherRepository) Update(ctx context.Context, teacher *model.Teacher) 
 }
 
 func (r *teacherRepository) Delete(ctx context.Context, id uint) error {
-	if err := r.db.WithContext(ctx).Delete(&model.Teacher{}, id).Error; err != nil {
+	if err := withTx(ctx, r.db).Delete(&model.Teacher{}, id).Error; err != nil {
 		return fmt.Errorf("delete teacher: %w", err)
 	}
 	return nil

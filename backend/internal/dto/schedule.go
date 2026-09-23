@@ -71,12 +71,30 @@ type AdjustmentResponse struct {
 	LogID     uint               `json:"log_id"`
 }
 
+// UndoAdjustmentResponse is the result of reverting a manual adjustment.
+type UndoAdjustmentResponse struct {
+	// LogID is the id of the undo history entry created by this request.
+	// It is 0 when the change was already undone and nothing was written.
+	LogID uint `json:"log_id"`
+	// OriginalLogID is the id of the adjustment log that was reverted.
+	OriginalLogID uint `json:"original_log_id"`
+	// Action is the original adjustment type (move|swap).
+	Action string `json:"action"`
+	// Schedules are the restored lessons at their original positions.
+	Schedules []ScheduleResponse `json:"schedules"`
+	// Conflicts is the latest full-timetable conflict report.
+	Conflicts []ConflictResponse `json:"conflicts"`
+	// AlreadyUndone is true when a repeat undo request changed nothing.
+	AlreadyUndone bool `json:"already_undone"`
+}
+
 // AdjustmentLogResponse is an audit history entry.
 type AdjustmentLogResponse struct {
 	ID         uint   `json:"id"`
 	ScheduleID uint   `json:"schedule_id"`
 	Action     string `json:"action"`
 	Detail     string `json:"detail"`
+	UndoneBy   *uint  `json:"undone_by"`
 	CreatedAt  string `json:"created_at"`
 }
 

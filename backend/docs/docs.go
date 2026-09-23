@@ -561,6 +561,53 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/schedules/adjustments/{id}/undo": {
+            "post": {
+                "description": "Re-validates the original positions against the latest timetable and teacher unavailable periods; rejects with 409 (without touching timetable or history) if occupied.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "schedules"
+                ],
+                "summary": "Undo a move or swap adjustment",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "adjustment log id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gbschedule_gbschedule_internal_dto.Response"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gbschedule_gbschedule_internal_dto.Response"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gbschedule_gbschedule_internal_dto.Response"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_gbschedule_gbschedule_internal_dto.Response"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/schedules/conflicts": {
             "get": {
                 "produces": [

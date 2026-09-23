@@ -11,4 +11,5 @@ const (
 const (
 	ActionSwap = "swap"
 	ActionMove = "move"
+	ActionUndo = "undo"
 )

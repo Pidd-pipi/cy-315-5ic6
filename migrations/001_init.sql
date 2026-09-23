@@ -84,6 +84,8 @@ CREATE TABLE IF NOT EXISTS adjustment_logs (
     deleted_at DATETIME,
     schedule_id INTEGER,
     action TEXT NOT NULL,
-    detail TEXT
+    detail TEXT,
+    undone_by INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_adjustment_logs_schedule ON adjustment_logs(schedule_id);
+CREATE INDEX IF NOT EXISTS idx_adjustment_logs_undone_by ON adjustment_logs(undone_by);

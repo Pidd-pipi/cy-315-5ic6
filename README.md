@@ -62,6 +62,7 @@ go run ./cmd/server
 | GET | `/api/v1/schedules/conflicts` | 冲突检测 |
 | POST | `/api/v1/schedules/swap` | 交换两节课 |
 | POST | `/api/v1/schedules/move` | 移动单节课 |
+| POST | `/api/v1/schedules/adjustments/:id/undo` | 撤销指定调课（移动/互换） |
 | GET | `/api/v1/schedules/adjustments` | 调课历史 |
 | GET | `/api/v1/schedules/export` | 课表导出（JSON/CSV） |
 | GET | `/api/v1/statistics/classrooms` | 教室利用率 |

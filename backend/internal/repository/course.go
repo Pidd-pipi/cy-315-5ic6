@@ -30,10 +30,10 @@ func NewCourseRepository(db *gorm.DB) CourseRepository {
 func (r *courseRepository) List(ctx context.Context, page, pageSize int) ([]model.Course, int64, error) {
 	var items []model.Course
 	var total int64
-	if err := r.db.WithContext(ctx).Model(&model.Course{}).Count(&total).Error; err != nil {
+	if err := withTx(ctx, r.db).Model(&model.Course{}).Count(&total).Error; err != nil {
 		return nil, 0, fmt.Errorf("count courses: %w", err)
 	}
-	if err := paginate(r.db.WithContext(ctx).Model(&model.Course{}), page, pageSize).
+	if err := paginate(withTx(ctx, r.db).Model(&model.Course{}), page, pageSize).
 		Order("id ASC").Find(&items).Error; err != nil {
 		return nil, 0, fmt.Errorf("list courses: %w", err)
 	}
@@ -42,7 +42,7 @@ func (r *courseRepository) List(ctx context.Context, page, pageSize int) ([]mode
 
 func (r *courseRepository) GetByID(ctx context.Context, id uint) (*model.Course, error) {
 	var item model.Course
-	if err := r.db.WithContext(ctx).First(&item, id).Error; err != nil {
+	if err := withTx(ctx, r.db).First(&item, id).Error; err != nil {
 		return nil, normalizeError(err)
 	}
 	return &item, nil
@@ -53,14 +53,14 @@ func (r *courseRepository) GetByIDs(ctx context.Context, ids []uint) ([]model.Co
 	if len(ids) == 0 {
 		return items, nil
 	}
-	if err := r.db.WithContext(ctx).Where("id IN ?", ids).Find(&items).Error; err != nil {
+	if err := withTx(ctx, r.db).Where("id IN ?", ids).Find(&items).Error; err != nil {
 		return nil, fmt.Errorf("get courses by ids: %w", err)
 	}
 	return items, nil
 }
 
 func (r *courseRepository) Create(ctx context.Context, course *model.Course) error {
-	if err := r.db.WithContext(ctx).Create(course).Error; err != nil {
+	if err := withTx(ctx, r.db).Create(course).Error; err != nil {
 		if isConstraintError(err) {
 			return ErrConstraint
 		}
@@ -70,7 +70,7 @@ func (r *courseRepository) Create(ctx context.Context, course *model.Course) err
 }
 
 func (r *courseRepository) Update(ctx context.Context, course *model.Course) error {
-	if err := r.db.WithContext(ctx).Save(course).Error; err != nil {
+	if err := withTx(ctx, r.db).Save(course).Error; err != nil {
 		if isConstraintError(err) {
 			return ErrConstraint
 		}
@@ -80,7 +80,7 @@ func (r *courseRepository) Update(ctx context.Context, course *model.Course) err
 }
 
 func (r *courseRepository) Delete(ctx context.Context, id uint) error {
-	if err := r.db.WithContext(ctx).Delete(&model.Course{}, id).Error; err != nil {
+	if err := withTx(ctx, r.db).Delete(&model.Course{}, id).Error; err != nil {
 		return fmt.Errorf("delete course: %w", err)
 	}
 	return nil

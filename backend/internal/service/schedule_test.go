@@ -39,6 +39,7 @@ func newScheduleService(t *testing.T, db *gorm.DB) service.ScheduleService {
 		repository.NewCourseRepository(db),
 		repository.NewTimeSlotRepository(db),
 		repository.NewAdjustmentLogRepository(db),
+		repository.NewTransactionManager(db),
 		logger,
 	)
 }

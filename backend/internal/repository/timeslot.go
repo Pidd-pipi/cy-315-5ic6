@@ -31,10 +31,10 @@ func NewTimeSlotRepository(db *gorm.DB) TimeSlotRepository {
 func (r *timeSlotRepository) List(ctx context.Context, page, pageSize int) ([]model.TimeSlot, int64, error) {
 	var items []model.TimeSlot
 	var total int64
-	if err := r.db.WithContext(ctx).Model(&model.TimeSlot{}).Count(&total).Error; err != nil {
+	if err := withTx(ctx, r.db).Model(&model.TimeSlot{}).Count(&total).Error; err != nil {
 		return nil, 0, fmt.Errorf("count time slots: %w", err)
 	}
-	if err := paginate(r.db.WithContext(ctx).Model(&model.TimeSlot{}), page, pageSize).
+	if err := paginate(withTx(ctx, r.db).Model(&model.TimeSlot{}), page, pageSize).
 		Order("start_time ASC").Find(&items).Error; err != nil {
 		return nil, 0, fmt.Errorf("list time slots: %w", err)
 	}
@@ -43,7 +43,7 @@ func (r *timeSlotRepository) List(ctx context.Context, page, pageSize int) ([]mo
 
 func (r *timeSlotRepository) GetByID(ctx context.Context, id uint) (*model.TimeSlot, error) {
 	var item model.TimeSlot
-	if err := r.db.WithContext(ctx).First(&item, id).Error; err != nil {
+	if err := withTx(ctx, r.db).First(&item, id).Error; err != nil {
 		return nil, normalizeError(err)
 	}
 	return &item, nil
@@ -54,7 +54,7 @@ func (r *timeSlotRepository) GetByIDs(ctx context.Context, ids []uint) ([]model.
 	if len(ids) == 0 {
 		return items, nil
 	}
-	if err := r.db.WithContext(ctx).Where("id IN ?", ids).Find(&items).Error; err != nil {
+	if err := withTx(ctx, r.db).Where("id IN ?", ids).Find(&items).Error; err != nil {
 		return nil, fmt.Errorf("get time slots by ids: %w", err)
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].StartTime < items[j].StartTime })
@@ -62,7 +62,7 @@ func (r *timeSlotRepository) GetByIDs(ctx context.Context, ids []uint) ([]model.
 }
 
 func (r *timeSlotRepository) Create(ctx context.Context, slot *model.TimeSlot) error {
-	if err := r.db.WithContext(ctx).Create(slot).Error; err != nil {
+	if err := withTx(ctx, r.db).Create(slot).Error; err != nil {
 		if isConstraintError(err) {
 			return ErrConstraint
 		}
@@ -72,7 +72,7 @@ func (r *timeSlotRepository) Create(ctx context.Context, slot *model.TimeSlot) e
 }
 
 func (r *timeSlotRepository) Update(ctx context.Context, slot *model.TimeSlot) error {
-	if err := r.db.WithContext(ctx).Save(slot).Error; err != nil {
+	if err := withTx(ctx, r.db).Save(slot).Error; err != nil {
 		if isConstraintError(err) {
 			return ErrConstraint
 		}
@@ -82,7 +82,7 @@ func (r *timeSlotRepository) Update(ctx context.Context, slot *model.TimeSlot) e
 }
 
 func (r *timeSlotRepository) Delete(ctx context.Context, id uint) error {
-	if err := r.db.WithContext(ctx).Delete(&model.TimeSlot{}, id).Error; err != nil {
+	if err := withTx(ctx, r.db).Delete(&model.TimeSlot{}, id).Error; err != nil {
 		return fmt.Errorf("delete time slot: %w", err)
 	}
 	return nil

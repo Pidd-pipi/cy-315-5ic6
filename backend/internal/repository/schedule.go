@@ -40,7 +40,7 @@ func (r *scheduleRepository) CreateBatch(ctx context.Context, schedules []model.
 	if len(schedules) == 0 {
 		return nil
 	}
-	if err := r.db.WithContext(ctx).CreateInBatches(schedules, 200).Error; err != nil {
+	if err := withTx(ctx, r.db).CreateInBatches(schedules, 200).Error; err != nil {
 		return fmt.Errorf("create schedules: %w", err)
 	}
 	return nil
@@ -48,14 +48,14 @@ func (r *scheduleRepository) CreateBatch(ctx context.Context, schedules []model.
 
 func (r *scheduleRepository) GetByID(ctx context.Context, id uint) (*model.Schedule, error) {
 	var item model.Schedule
-	if err := r.db.WithContext(ctx).First(&item, id).Error; err != nil {
+	if err := withTx(ctx, r.db).First(&item, id).Error; err != nil {
 		return nil, normalizeError(err)
 	}
 	return &item, nil
 }
 
 func (r *scheduleRepository) List(ctx context.Context, filter ScheduleFilter) ([]model.Schedule, error) {
-	query := r.db.WithContext(ctx).Model(&model.Schedule{})
+	query := withTx(ctx, r.db).Model(&model.Schedule{})
 	if filter.Week != nil {
 		query = query.Where("week = ?", *filter.Week)
 	}
@@ -76,14 +76,14 @@ func (r *scheduleRepository) List(ctx context.Context, filter ScheduleFilter) ([
 }
 
 func (r *scheduleRepository) Update(ctx context.Context, schedule *model.Schedule) error {
-	if err := r.db.WithContext(ctx).Save(schedule).Error; err != nil {
+	if err := withTx(ctx, r.db).Save(schedule).Error; err != nil {
 		return fmt.Errorf("update schedule: %w", err)
 	}
 	return nil
 }
 
 func (r *scheduleRepository) DeleteByID(ctx context.Context, id uint) error {
-	if err := r.db.WithContext(ctx).Delete(&model.Schedule{}, id).Error; err != nil {
+	if err := withTx(ctx, r.db).Delete(&model.Schedule{}, id).Error; err != nil {
 		return fmt.Errorf("delete schedule: %w", err)
 	}
 	return nil
@@ -93,14 +93,14 @@ func (r *scheduleRepository) DeleteByWeeks(ctx context.Context, weeks []uint) er
 	if len(weeks) == 0 {
 		return nil
 	}
-	if err := r.db.WithContext(ctx).Where("week IN ?", weeks).Delete(&model.Schedule{}).Error; err != nil {
+	if err := withTx(ctx, r.db).Where("week IN ?", weeks).Delete(&model.Schedule{}).Error; err != nil {
 		return fmt.Errorf("delete schedules by weeks: %w", err)
 	}
 	return nil
 }
 
 func (r *scheduleRepository) DeleteAll(ctx context.Context) error {
-	if err := r.db.WithContext(ctx).Where("1 = 1").Delete(&model.Schedule{}).Error; err != nil {
+	if err := withTx(ctx, r.db).Where("1 = 1").Delete(&model.Schedule{}).Error; err != nil {
 		return fmt.Errorf("delete all schedules: %w", err)
 	}
 	return nil
